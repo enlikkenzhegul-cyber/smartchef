@@ -43,6 +43,7 @@
 
     <form method="post" class="main-form">
         {% csrf_token %}
+        <input type="hidden" name="base_recipe_id" value="{{ draft_token }}">
 
         <div class="workspace">
 
@@ -125,17 +126,36 @@
                         </label>
                     </div>
 
-                    <button type="submit" name="action" value="generate" class="cook-button">
+                    <button type="submit" name="action" value="generate" formnovalidate class="cook-button">
                         <span>{% if language == 'ru' %}Собрать рецепт{% else %}Рецепт құрастыру{% endif %}</span>
                         <b>→</b>
                     </button>
+
+                    <button type="submit" name="action" value="compare" formnovalidate class="compare-button">
+                        {% if language == 'ru' %}Сравнить два рецепта{% else %}Екі рецептті салыстыру{% endif %}
+                    </button>
+                </div>
+
+                <div class="editor-block">
+                    <label class="field-label" for="prompt">
+                        {% if language == 'ru' %}Запрос{% else %}Сұрау{% endif %}
+                    </label>
+                    <input type="text" id="prompt" name="prompt" class="editor-input"
+                           minlength="3" maxlength="300" value="{{ prompt }}"
+                           placeholder="{% if language == 'ru' %}Например: быстрый завтрак{% else %}Мысалы: жылдам таңғы ас{% endif %}">
+                    <button type="submit" name="action" value="suggest" id="suggest-btn" class="suggest-button">
+                        {% if language == 'ru' %}Получить предложение{% else %}Ұсыныс алу{% endif %}
+                    </button>
+                    <p id="suggest-waiting" class="waiting-msg" hidden>
+                        {% if language == 'ru' %}Готовим предложение...{% else %}Ұсыныс дайындалып жатыр...{% endif %}
+                    </p>
                 </div>
 
                 <div class="lang-switch-wrapper">
                     <span>{% if language == 'ru' %}Язык интерфейса:{% else %}Интерфейс тілі:{% endif %}</span>
                     <div class="language-switch">
-                        <button type="submit" name="language" value="kk" class="{% if language == 'kk' %}active{% endif %}">KZ</button>
-                        <button type="submit" name="language" value="ru" class="{% if language == 'ru' %}active{% endif %}">RU</button>
+                        <button type="submit" name="language" value="kk" formnovalidate class="{% if language == 'kk' %}active{% endif %}">KZ</button>
+                        <button type="submit" name="language" value="ru" formnovalidate class="{% if language == 'ru' %}active{% endif %}">RU</button>
                     </div>
                 </div>
             </aside>
@@ -149,8 +169,19 @@
     </section>
     {% endif %}
 
+    {% if can_undo %}
+    <section class="undo-bar" role="status">
+        <span>{% if language == 'ru' %}Есть действие, которое можно отменить.{% else %}Болдырмауға болатын әрекет бар.{% endif %}</span>
+        <form method="post" action="{% url 'recipes:undo_last' %}">
+            {% csrf_token %}
+            <input type="hidden" name="language" value="{{ language }}">
+            <button type="submit" class="undo-button">↶ {% if language == 'ru' %}Отменить{% else %}Болдырмау{% endif %}</button>
+        </form>
+    </section>
+    {% endif %}
+
     {% if recipe %}
-    <!-- 02 · Результат -->
+    <!-- 02 · Негізгі рецепт (өзгермейді) -->
     <section class="result paper-card">
         <div class="card-number">02</div>
         <div class="result-top">
@@ -163,11 +194,98 @@
         <div class="recipe-text">{{ recipe }}</div>
 
         {% if can_save %}
-        <form method="post" action="{% url 'recipes:save_recipe' %}" class="save-form">
-            {% csrf_token %}
-            <button class="save-button" type="submit">{% if language == 'ru' %}Сохранить{% else %}Сақтау{% endif %}</button>
-        </form>
+        <div class="result-actions">
+            <form method="post" action="{% url 'recipes:reject_recipe' %}">
+                {% csrf_token %}
+                <input type="hidden" name="language" value="{{ language }}">
+                <button type="submit" class="reject-button">{% if language == 'ru' %}Отклонить{% else %}Бас тарту{% endif %}</button>
+            </form>
+            <form method="post" action="{% url 'recipes:save_recipe' %}">
+                {% csrf_token %}
+                <button class="save-button" type="submit">{% if language == 'ru' %}Сохранить{% else %}Сақтау{% endif %}</button>
+            </form>
+        </div>
         {% endif %}
+    </section>
+    {% endif %}
+
+    {% if pending %}
+    <!-- 03 · Ұсыныс (pending, негізгі recipe өзгермейді) -->
+    <section class="result paper-card pending-card">
+        <div class="card-number">03</div>
+        <div class="result-top">
+            <div>
+                <span class="eyebrow">AI SUGGESTION</span>
+                <h2>{% if language == 'ru' %}Предложение (ожидает решения){% else %}Ұсыныс (шешімді күтуде){% endif %}</h2>
+            </div>
+            <span class="result-mark" aria-hidden="true">?</span>
+        </div>
+        <div class="pending-preview">
+            <h3>{{ pending.candidate.title }}</h3>
+            <h4>{% if language == 'ru' %}Ингредиенты{% else %}Ингредиенттер{% endif %}</h4>
+            <ul>
+                {% for item in pending.candidate.ingredients %}<li>{{ item }}</li>{% endfor %}
+            </ul>
+            <h4>{% if language == 'ru' %}Шаги приготовления{% else %}Дайындау қадамдары{% endif %}</h4>
+            <ol>
+                {% for item in pending.candidate.steps %}<li>{{ item }}</li>{% endfor %}
+            </ol>
+        </div>
+        <div class="result-actions">
+            <form method="post" action="{% url 'recipes:reject_pending' %}">
+                {% csrf_token %}
+                <input type="hidden" name="pending_id" value="{{ pending.pending_id }}">
+                <input type="hidden" name="token" value="{{ pending.token }}">
+                <input type="hidden" name="language" value="{{ language }}">
+                <button type="submit" class="reject-button">{% if language == 'ru' %}Отклонить{% else %}Бас тарту{% endif %}</button>
+            </form>
+            <form method="post" action="{% url 'recipes:accept_pending' %}">
+                {% csrf_token %}
+                <input type="hidden" name="pending_id" value="{{ pending.pending_id }}">
+                <input type="hidden" name="token" value="{{ pending.token }}">
+                <input type="hidden" name="language" value="{{ language }}">
+                <button type="submit" class="save-button">{% if language == 'ru' %}Принять{% else %}Қабылдау{% endif %}</button>
+            </form>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if compare_items %}
+    <!-- 04 · Салыстыру -->
+    <section class="result paper-card">
+        <div class="card-number">04</div>
+        <div class="result-top">
+            <div>
+                <span class="eyebrow">AI COMPARE</span>
+                <h2>{% if language == 'ru' %}Выберите вариант{% else %}Нұсқаны таңдаңыз{% endif %}</h2>
+            </div>
+            <span class="result-mark" aria-hidden="true">⇄</span>
+        </div>
+        <div class="compare-grid">
+            {% for item in compare_items %}
+            <article class="compare-card">
+                <div class="compare-head">
+                    <span class="saved-index">#{{ forloop.counter }}</span>
+                    <span class="saved-meta"><span>{{ item.minutes }} min</span></span>
+                </div>
+                <div class="recipe-text">{{ item.recipe }}</div>
+                <div class="result-actions">
+                    <form method="post" action="{% url 'recipes:reject_candidate' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="token" value="{{ item.token }}">
+                        <input type="hidden" name="language" value="{{ language }}">
+                        <button type="submit" class="reject-button">{% if language == 'ru' %}Отклонить{% else %}Бас тарту{% endif %}</button>
+                    </form>
+                    <form method="post" action="{% url 'recipes:accept_candidate' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="token" value="{{ item.token }}">
+                        <input type="hidden" name="language" value="{{ language }}">
+                        <button type="submit" class="save-button">{% if language == 'ru' %}Выбрать{% else %}Таңдау{% endif %}</button>
+                    </form>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
     </section>
     {% endif %}
 

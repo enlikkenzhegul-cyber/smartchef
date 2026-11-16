@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const countEl = document.getElementById('catalog-count');
     const clearBtn = document.getElementById('catalog-clear');
     const emptyMsg = document.getElementById('catalog-empty');
+    const promptInput = document.getElementById('prompt');
+    const suggestBtn = document.getElementById('suggest-btn');
+    const suggestWaiting = document.getElementById('suggest-waiting');
 
     let currentCategory = 'all';
     let currentSearch = '';
@@ -111,6 +114,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 checkbox.checked = false;
             });
             renderTags();
+        });
+    }
+
+    // ── Сұрау өрісі: 3–300 таңба клиент жағында шектеу ──
+    if (promptInput) {
+        promptInput.addEventListener('input', () => {
+            if (promptInput.value.length > 300) {
+                promptInput.value = promptInput.value.slice(0, 300);
+            }
+        });
+    }
+
+    // ── «Ұсыныс алу»: күту хабары + батырманың уақытша сөнуі ──
+    if (suggestBtn) {
+        suggestBtn.addEventListener('click', (e) => {
+            const value = promptInput ? promptInput.value.trim() : '';
+            if (value.length < 3 || value.length > 300) {
+                e.preventDefault();
+                if (promptInput) promptInput.focus();
+                return;
+            }
+            if (suggestWaiting) suggestWaiting.hidden = false;
+            suggestBtn.style.opacity = '0.4';
+            suggestBtn.style.pointerEvents = 'none';
+            suggestBtn.disabled = true;
         });
     }
 
